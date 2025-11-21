@@ -1,25 +1,52 @@
 <script setup lang="ts">
-import { Search, Filter, Plus, Trash2, Edit2, ChevronLeft, ChevronRight, Mail, AlertTriangle, Save, X } from 'lucide-vue-next';
+import { Search, Filter, Plus, Trash2, Edit2, ChevronLeft, ChevronRight, Mail, AlertTriangle, Loader2 } from 'lucide-vue-next';
 
 const { addToast } = useToast();
+const supabase = useSupabaseClient(); // Init Client Supabase
 
 // --- 1. DATA DEFINITION ---
+// Kita sesuaikan dengan kolom di Supabase
 interface Customer {
   id: number;
   name: string;
   email: string;
   role: string;
   status: 'Active' | 'Inactive';
-  lastLogin: string;
+  created_at?: string; // Kolom timestamp dari Supabase
 }
 
-const customers = ref<Customer[]>([
-  { id: 1, name: 'Budi Santoso', email: 'budi@example.com', role: 'Admin', status: 'Active', lastLogin: '2 mins ago' },
-  { id: 2, name: 'Siti Aminah', email: 'siti@example.com', role: 'User', status: 'Active', lastLogin: '1 hour ago' },
-  { id: 3, name: 'John Doe', email: 'john.doe@company.com', role: 'Editor', status: 'Inactive', lastLogin: '3 days ago' },
-]);
+// State Data (Awalnya kosong array)
+const customers = ref<Customer[]>([]);
+const isLoading = ref(true); // Loading state
 
-// --- 2. SEARCH & PAGINATION ---
+// --- 2. FETCH DATA (READ) ---
+// Fungsi mengambil data dari Supabase
+const fetchCustomers = async () => {
+  isLoading.value = true;
+  
+  // Query: Select Bintang (*) dan urutkan ID dari besar ke kecil (Terbaru di atas)
+  const { data, error } = await supabase
+    .from('customers')
+    .select('*')
+    .order('id', { ascending: false });
+
+  if (error) {
+    addToast('Failed to fetch data: ' + error.message, 'error');
+  } else {
+    customers.value = data as Customer[];
+  }
+  
+  isLoading.value = false;
+};
+
+// Panggil fetch saat halaman pertama kali dibuka
+onMounted(() => {
+  fetchCustomers();
+});
+
+
+// --- 3. SEARCH & PAGINATION (Client Side Logic) ---
+// (Bagian ini tidak berubah banyak, karena kita filter data yang sudah didownload)
 const searchQuery = ref('');
 const currentPage = ref(1);
 const itemsPerPage = 5;
@@ -31,14 +58,19 @@ const filteredCustomers = computed(() => {
   );
 });
 
-const totalPages = computed(() => Math.ceil(filteredCustomers.value.length / itemsPerPage));
+const totalPages = computed(() => Math.ceil(filteredCustomers.value.length / itemsPerPage) || 1);
+
+// Reset halaman ke 1 jika search berubah
+watch(searchQuery, () => currentPage.value = 1);
+
 const paginatedCustomers = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage;
   const end = start + itemsPerPage;
   return filteredCustomers.value.slice(start, end);
 });
 
-// --- 3. DELETE LOGIC ---
+
+// --- 4. DELETE LOGIC (REAL) ---
 const isDeleteModalOpen = ref(false);
 const selectedCustomerId = ref<number | null>(null);
 
@@ -47,18 +79,32 @@ const openDeleteModal = (id: number) => {
   isDeleteModalOpen.value = true;
 };
 
-const confirmDelete = () => {
+const confirmDelete = async () => {
   if (selectedCustomerId.value !== null) {
-    customers.value = customers.value.filter(c => c.id !== selectedCustomerId.value);
+    // Hapus di Supabase
+    const { error } = await supabase
+      .from('customers')
+      .delete()
+      .eq('id', selectedCustomerId.value);
+
+    if (error) {
+      addToast('Error deleting: ' + error.message, 'error');
+    } else {
+      addToast('Customer deleted successfully', 'success');
+      // Refresh Data Tanpa Reload Page
+      await fetchCustomers();
+    }
+    
     isDeleteModalOpen.value = false;
-    addToast('Customer deleted successfully', 'success');
     selectedCustomerId.value = null;
   }
 };
 
-// --- 4. ADD & EDIT LOGIC (NEW!) ---
+
+// --- 5. ADD & EDIT LOGIC (REAL) ---
 const isFormModalOpen = ref(false);
-const formMode = ref<'add' | 'edit'>('add'); // Penanda mode
+const isSubmitting = ref(false);
+const formMode = ref<'add' | 'edit'>('add');
 const formData = ref({
   id: 0,
   name: '',
@@ -67,56 +113,60 @@ const formData = ref({
   status: 'Active' as 'Active' | 'Inactive'
 });
 
-// Fungsi Buka Modal ADD
 const openAddModal = () => {
   formMode.value = 'add';
-  // Reset form kosong
   formData.value = { id: 0, name: '', email: '', role: 'User', status: 'Active' };
   isFormModalOpen.value = true;
 };
 
-// Fungsi Buka Modal EDIT
 const openEditModal = (customer: Customer) => {
   formMode.value = 'edit';
-  // Copy data customer ke form (Spread operator biar gak reaktif langsung)
   formData.value = { ...customer, status: customer.status as 'Active' | 'Inactive' };
   isFormModalOpen.value = true;
 };
 
-// Fungsi Simpan (Create / Update)
-const handleSaveCustomer = () => {
-  // Validasi sederhana
+const handleSaveCustomer = async () => {
   if (!formData.value.name || !formData.value.email) {
     addToast('Please fill in all required fields', 'error');
     return;
   }
 
+  isSubmitting.value = true;
+
   if (formMode.value === 'add') {
-    // === LOGIC CREATE ===
-    const newId = Math.max(...customers.value.map(c => c.id), 0) + 1; // Generate ID baru
-    customers.value.unshift({
-      id: newId,
+    // === CREATE (INSERT) ===
+    // Kita tidak perlu kirim ID, karena Supabase "Is Identity" akan generate otomatis
+    const { error } = await supabase.from('customers').insert({
       name: formData.value.name,
       email: formData.value.email,
       role: formData.value.role,
-      status: formData.value.status,
-      lastLogin: 'Just now'
+      status: formData.value.status
     });
-    addToast('New customer added successfully', 'success');
+
+    if (error) addToast('Error adding: ' + error.message, 'error');
+    else addToast('New customer added successfully', 'success');
+
   } else {
-    // === LOGIC UPDATE ===
-    const index = customers.value.findIndex(c => c.id === formData.value.id);
-    if (index !== -1) {
-      customers.value[index] = { 
-        ...customers.value[index], 
-        ...formData.value 
-      };
-      addToast('Customer details updated', 'success');
-    }
+    // === UPDATE ===
+    const { error } = await supabase
+      .from('customers')
+      .update({
+        name: formData.value.name,
+        email: formData.value.email,
+        role: formData.value.role,
+        status: formData.value.status
+      })
+      .eq('id', formData.value.id); // Cari berdasarkan ID
+
+    if (error) addToast('Error updating: ' + error.message, 'error');
+    else addToast('Customer updated successfully', 'success');
   }
 
-  // Tutup Modal
+  isSubmitting.value = false;
   isFormModalOpen.value = false;
+  
+  // Refresh data tabel
+  await fetchCustomers();
 };
 </script>
 
@@ -125,7 +175,7 @@ const handleSaveCustomer = () => {
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
       <div>
         <h1 class="text-2xl font-bold text-slate-900 dark:text-white">Customers</h1>
-        <p class="text-slate-500 dark:text-slate-400">Manage your user base and permissions.</p>
+        <p class="text-slate-500 dark:text-slate-400">Manage your user base via Supabase.</p>
       </div>
       <AppButton variant="primary" size="sm" @click="openAddModal">
         <template #icon>
@@ -135,7 +185,7 @@ const handleSaveCustomer = () => {
       </AppButton>
     </div>
 
-    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden min-h-[300px]">
       
       <div class="p-4 border-b border-slate-200 dark:border-slate-700 flex flex-col md:flex-row gap-4 justify-between items-center">
         <div class="relative w-full md:w-72">
@@ -143,7 +193,7 @@ const handleSaveCustomer = () => {
           <input 
             v-model="searchQuery"
             type="text" 
-            placeholder="Search customers..." 
+            placeholder="Search database..." 
             class="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           >
         </div>
@@ -153,14 +203,19 @@ const handleSaveCustomer = () => {
         </AppButton>
       </div>
 
-      <div class="overflow-x-auto">
+      <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 text-slate-500">
+        <Loader2 :size="32" class="animate-spin mb-2 text-blue-600" />
+        <p>Loading data from Supabase...</p>
+      </div>
+
+      <div v-else class="overflow-x-auto">
         <table class="w-full text-left border-collapse">
           <thead>
             <tr class="bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-700 text-xs uppercase text-slate-500 dark:text-slate-400 font-semibold">
               <th class="px-6 py-4">Customer</th>
               <th class="px-6 py-4">Status</th>
               <th class="px-6 py-4">Role</th>
-              <th class="px-6 py-4">Last Login</th>
+              <th class="px-6 py-4">Created At</th>
               <th class="px-6 py-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -184,7 +239,9 @@ const handleSaveCustomer = () => {
                 </span>
               </td>
               <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">{{ customer.role }}</td>
-              <td class="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{{ customer.lastLogin }}</td>
+              <td class="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
+                {{ customer.created_at ? new Date(customer.created_at).toLocaleDateString() : '-' }}
+              </td>
               <td class="px-6 py-4 text-right">
                 <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <AppButton variant="ghost" size="sm" @click="openEditModal(customer)">
@@ -196,13 +253,19 @@ const handleSaveCustomer = () => {
                 </div>
               </td>
             </tr>
+            
+            <tr v-if="paginatedCustomers.length === 0">
+              <td colspan="5" class="px-6 py-12 text-center text-slate-500">
+                No data found. Try adding a new customer.
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
 
-      <div class="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+      <div v-if="!isLoading" class="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
         <span class="text-sm text-slate-500 dark:text-slate-400">
-          Showing {{ (currentPage - 1) * itemsPerPage + 1 }} to {{ Math.min(currentPage * itemsPerPage, filteredCustomers.length) }} of {{ filteredCustomers.length }} results
+           Page {{ currentPage }} of {{ totalPages }}
         </span>
         <div class="flex gap-2">
           <AppButton variant="secondary" size="sm" @click="currentPage > 1 ? currentPage-- : null" :disabled="currentPage === 1">
@@ -227,8 +290,8 @@ const handleSaveCustomer = () => {
             <AlertTriangle :size="24" />
          </div>
          <div>
-           <h4 class="font-medium text-slate-900 dark:text-white mb-1">Are you sure?</h4>
-           <p class="text-sm text-slate-500 dark:text-slate-400">This action cannot be undone. This will permanently delete the customer data.</p>
+           <h4 class="font-medium text-slate-900 dark:text-white mb-1">Confirm Delete</h4>
+           <p class="text-sm text-slate-500 dark:text-slate-400">Are you sure you want to remove this data from the database permanently?</p>
          </div>
        </div>
     </AppModal>
@@ -240,44 +303,31 @@ const handleSaveCustomer = () => {
       @confirm="handleSaveCustomer"
     >
       <div class="space-y-4">
-        <AppInput 
-          v-model="formData.name" 
-          label="Full Name" 
-          placeholder="e.g. John Doe" 
-        />
-        
-        <AppInput 
-          v-model="formData.email" 
-          type="email"
-          label="Email Address" 
-          placeholder="e.g. john@company.com" 
-        />
+        <AppInput v-model="formData.name" label="Full Name" />
+        <AppInput v-model="formData.email" type="email" label="Email Address" />
 
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Role</label>
-            <select 
-              v-model="formData.role"
-              class="w-full py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
+            <select v-model="formData.role" class="w-full py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white text-sm">
               <option>User</option>
               <option>Editor</option>
               <option>Admin</option>
             </select>
           </div>
-
           <div>
             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Status</label>
-            <select 
-              v-model="formData.status"
-              class="w-full py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
+            <select v-model="formData.status" class="w-full py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white text-sm">
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
             </select>
           </div>
         </div>
       </div>
+      
+      <p v-if="isSubmitting" class="text-xs text-blue-600 mt-2 text-right animate-pulse">
+        Syncing with Supabase...
+      </p>
     </AppModal>
 
   </div>

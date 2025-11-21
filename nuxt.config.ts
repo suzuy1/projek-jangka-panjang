@@ -7,8 +7,14 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/tailwindcss', 
             '@nuxtjs/color-mode',
             '@pinia/nuxt',
-            '@pinia-plugin-persistedstate/nuxt'
+            '@pinia-plugin-persistedstate/nuxt',
+            '@nuxtjs/supabase'
   ],
+
+  supabase: {
+    redirect: false
+  },
+
 
   // 2. Konfigurasi agar class CSS-nya bernama 'dark' (standar Tailwind)
   colorMode: {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { User, Bell, Lock, Save, Camera } from 'lucide-vue-next';
+const supabase = useSupabaseClient();
 // Pastikan path ke store sudah benar sesuai struktur project Anda
 import { useUserStore } from '~/stores/user'; 
 
@@ -30,6 +31,7 @@ const formData = ref({
 });
 
 const isSaving = ref(false);
+const isUploading = ref(false);
 
 // 1. Fungsi Trigger: Saat tombol kamera atau link upload diklik
 const triggerFileInput = () => {
@@ -37,30 +39,53 @@ const triggerFileInput = () => {
 };
 
 // 2. Fungsi Handle File: Saat user memilih file
-const handleFileChange = (event: Event) => {
+const handleFileChange = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
 
   if (file) {
-    // Validasi Tipe File (Harus Gambar)
+    // 1. Validasi
     if (!file.type.startsWith('image/')) {
-      addToast('Please select a valid image file (JPG/PNG)', 'error');
-      target.value = ''; // Reset input
+      addToast('Please select a valid image file', 'error');
       return;
     }
-
-    // Validasi Ukuran (Max 2MB)
     if (file.size > 2 * 1024 * 1024) {
-      addToast('File size is too large. Max 2MB allowed.', 'error');
-      target.value = ''; // Reset input
+      addToast('File size max 2MB', 'error');
       return;
     }
 
-    // Buat URL Preview Sementara menggunakan URL.createObjectURL()
-    const objectUrl = URL.createObjectURL(file);
-    formData.value.avatar = objectUrl; // Tampilkan di UI
+    // 2. Mulai Proses Upload
+    isUploading.value = true;
     
-    addToast('Photo selected! Click Save to apply.', 'info');
+    try {
+      // Bikin nama file unik (biar gak bentrok)
+      // Contoh: 17154233_avatar.png
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+
+      // Upload ke Supabase Storage (Bucket 'avatars')
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      // 3. Ambil URL Publik-nya
+      // Ini yang akan kita simpan ke database/store
+      const { data } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      // Update State Form dengan URL Cloud yang baru
+      formData.value.avatar = data.publicUrl;
+      
+      addToast('Image uploaded! Click Save to apply.', 'success');
+
+    } catch (error: any) {
+      addToast('Upload failed: ' + error.message, 'error');
+    } finally {
+      isUploading.value = false;
+    }
   }
 };
 
@@ -126,27 +151,24 @@ const handleSave = () => {
           <div class="flex flex-col sm:flex-row items-center gap-6 mb-8 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
             
             <!-- Area Avatar yang bisa diklik -->
-            <div class="relative group cursor-pointer" @click="triggerFileInput">
-              <img 
-                :src="formData.avatar" 
-                class="w-20 h-20 rounded-full border-4 border-white dark:border-slate-800 shadow-sm object-cover transition-opacity group-hover:opacity-75" 
-                alt="Avatar"
-              >
-              
-              <!-- Tombol Kamera (Overlay) -->
-              <button class="absolute bottom-0 right-0 bg-white dark:bg-slate-700 p-1.5 rounded-full border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 group-hover:text-blue-600 group-hover:border-blue-200 transition-all shadow-sm">
-                <Camera :size="14" />
-              </button>
+           <div class="relative group cursor-pointer" @click="triggerFileInput">
+  
+  <img 
+    :src="formData.avatar" 
+    :class="`w-20 h-20 rounded-full border-4 border-white dark:border-slate-800 shadow-sm object-cover transition-all group-hover:opacity-75 ${isUploading ? 'opacity-50 grayscale' : ''}`"
+    alt="Avatar"
+  >
+  
+  <div v-if="isUploading" class="absolute inset-0 flex items-center justify-center">
+     <div class="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+  </div>
+  
+  <button v-else class="absolute bottom-0 right-0 bg-white dark:bg-slate-700 p-1.5 rounded-full border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 group-hover:text-blue-600 shadow-sm">
+    <Camera :size="14" />
+  </button>
 
-              <!-- Input File Tersembunyi -->
-              <input 
-                ref="fileInput"
-                type="file" 
-                accept="image/*" 
-                class="hidden"
-                @change="handleFileChange"
-              >
-            </div>
+  <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="handleFileChange">
+</div>
 
             <!-- Teks dan Tombol Upload -->
             <div class="text-center sm:text-left">

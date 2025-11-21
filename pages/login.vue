@@ -1,39 +1,47 @@
 <script setup lang="ts">
 import { Eye, EyeOff, Lock, Mail, ArrowRight } from 'lucide-vue-next';
-import { useUserStore } from '~/stores/user'; // 1. Import Store Pinia
+import { useUserStore } from '~/stores/user';
 
-// PENTING: Override Layout Default
-definePageMeta({
-  layout: 'auth' 
-});
+definePageMeta({ layout: 'auth' });
 
-// State
+const userStore = useUserStore();
+const router = useRouter();
+// Ini composable sakti dari modul supabase
+const supabase = useSupabaseClient(); 
+
 const showPassword = ref(false);
 const email = ref('');
 const password = ref('');
 const isLoading = ref(false);
-const router = useRouter();
+const { addToast } = useToast(); // Panggil Toast kita
 
-// 2. Inisialisasi Store
-const userStore = useUserStore();
-
-// 3. Update Logic Login untuk memanggil action Pinia
-const handleLogin = () => {
-  // Hanya simulasi validasi input sederhana
+const handleLogin = async () => {
   if (!email.value || !password.value) return;
   
   isLoading.value = true;
   
-  // Simulasi API Call dengan delay 1.5 detik
-  setTimeout(() => {
-    // PANGGIL FUNGSI LOGIN DARI STORE (mengubah isAuthenticated menjadi true)
+  // === LOGIC LOGIN REAL (SUPABASE) ===
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.value,
+    password: password.value,
+  });
+
+  isLoading.value = false;
+
+  if (error) {
+    // Kalau email/password salah
+    addToast(error.message, 'error');
+  } else {
+    // Kalau sukses
+    addToast('Login successful! Redirecting...', 'success');
+    
+    // Simpan status ke Pinia (biar middleware kita seneng)
+    // Nanti kita akan refactor ini biar otomatis, tapi manual dulu gpp
     userStore.login(); 
     
-    isLoading.value = false;
-    
-    // Redirect ke Dashboard
+    // Redirect ke dashboard
     router.push('/');
-  }, 1500);
+  }
 };
 </script>
 
