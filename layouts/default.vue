@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Home, BarChart2, Users, Settings, Bell, Search, Moon, Sun, Menu, X, LogOut } from 'lucide-vue-next'; // TAMBAH LogOut
 import { useUserStore } from '~/stores/user';
+import { FileText } from 'lucide-vue-next';
 
 // Import Store dan Inisialisasi
 const userStore = useUserStore(); 
@@ -34,6 +35,7 @@ const menuItems = [
   { name: 'Overview', icon: Home, path: '/' },
   { name: 'Analytics', icon: BarChart2, path: '/analytics' },
   { name: 'Customers', icon: Users, path: '/customers' },
+  { name: 'Invoices', icon: FileText, path: '/invoices' }, // <--- BARU
   { name: 'Settings', icon: Settings, path: '/settings' },
 ];
 </script>
