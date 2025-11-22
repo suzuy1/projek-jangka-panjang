@@ -1,13 +1,20 @@
+// middleware/auth.global.ts
 export default defineNuxtRouteMiddleware((to, from) => {
-  const userStore = useUserStore(); // Panggil store
+  const userStore = useUserStore();
 
-  // Jika user BELUM login, dan mau masuk ke halaman selain Login
-  if (userStore.isAuthenticated === false && to.path !== '/login') {
-    return navigateTo('/login'); // Tendang ke halaman login
+  // --- UPDATE DI SINI ---
+  // Tambahkan '/update-password' agar tidak ditendang middleware
+  const publicRoutes = ['/login', '/register', '/forgot-password', '/update-password'];
+
+  // 1. Jika user BELUM login, dan mau masuk ke halaman selain Public Routes
+  if (!userStore.isAuthenticated && !publicRoutes.includes(to.path)) {
+    return navigateTo('/login');
   }
 
-  // Jika user SUDAH login, tapi iseng mau buka halaman Login lagi
-  if (userStore.isAuthenticated === true && to.path === '/login') {
-    return navigateTo('/'); // Balikin ke dashboard
+  // 2. Jika user SUDAH login...
+  // PENTING: Kita kecualikan '/update-password' dari redirect otomatis ke dashboard
+  // supaya user bisa tetap di halaman reset password meski sudah terdeteksi login.
+  if (userStore.isAuthenticated && ['/login', '/register', '/forgot-password'].includes(to.path)) {
+    return navigateTo('/');
   }
 });

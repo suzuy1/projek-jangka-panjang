@@ -58,13 +58,13 @@ const handleLogin = async () => {
 
         <form @submit.prevent="handleLogin" class="space-y-5">
           <p class="mt-8 text-center text-sm text-slate-500">
-          Don't have an account? 
-          <NuxtLink to="/register" class="text-blue-600 font-semibold hover:underline">Sign up</NuxtLink>
-        </p>
+            Don't have an account? 
+            <NuxtLink to="/register" class="text-blue-600 ...">Sign up</NuxtLink>
+          </p>
           <AppInput v-model="email" type="email" label="Email Address" placeholder="admin@nuxtdash.com" required>
             <template #icon><Mail :size="20" /></template>
           </AppInput>
-
+          
           <AppInput v-model="password" :type="showPassword ? 'text' : 'password'" label="Password" placeholder="••••••••" required>
             <template #icon><Lock :size="20" /></template>
             <template #right>
@@ -73,7 +73,12 @@ const handleLogin = async () => {
               </button>
             </template>
           </AppInput>
-
+          
+          <div class="flex justify-end">
+            <NuxtLink to="/forgot-password" class="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline transition-colors">
+              Forgot password?
+            </NuxtLink>
+          </div>
           <button type="submit" :disabled="isLoading" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed shadow-lg shadow-blue-200 dark:shadow-none">
             <span v-if="!isLoading">Sign in</span>
             <span v-else>Signing in...</span>
