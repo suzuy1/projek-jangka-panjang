@@ -57,6 +57,10 @@ const handleLogin = async () => {
         </div>
 
         <form @submit.prevent="handleLogin" class="space-y-5">
+          <p class="mt-8 text-center text-sm text-slate-500">
+          Don't have an account? 
+          <NuxtLink to="/register" class="text-blue-600 font-semibold hover:underline">Sign up</NuxtLink>
+        </p>
           <AppInput v-model="email" type="email" label="Email Address" placeholder="admin@nuxtdash.com" required>
             <template #icon><Mail :size="20" /></template>
           </AppInput>
